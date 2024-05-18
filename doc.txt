@@ -1,0 +1,61 @@
+Dokumentacja do aplikacji szyfrującej i deszyfrującej pliki z wykorzystaniem kryptografii symetrycznej przy użyciu interfejsu graficznego Tkinter oraz biblioteki cryptography w Pythonie.
+
+Wymagania Systemowe:
+	Python 3.6 lub nowszy
+Biblioteka cryptography, instalowana za pomocą pip install cryptography
+Struktura Aplikacji:
+	Aplikacja składa się z klasy głównej EncryptionApp, która tworzy interfejs graficzny, oraz szeregu funkcji pomocniczych do realizacji operacji kryptograficznych.
+
+Opis Funkcji:
+generate_key()
+Generuje losowy klucz 256-bitowy do użycia z algorytmem AES.
+
+generate_iv()
+Generuje losowy 128-bitowy wektor inicjalizujący (IV) dla trybów szyfrowania wymagających IV (CBC, CTR).
+
+pad(data)
+Dodaje padding do danych zgodnie z PKCS7, co jest wymagane dla algorytmu AES w celu zrównania długości danych.
+
+unpad(data)
+Usuwa padding z danych po deszyfrowaniu, przywracając oryginalny rozmiar danych.
+
+hmac_sign(key, data)
+Generuje podpis HMAC z wykorzystaniem SHA-256 na podanych danych, wykorzystując klucz.
+
+hmac_verify(key, signature, data)
+Weryfikuje podpis HMAC, zwracając True jeśli podpis jest poprawny, w przeciwnym razie rzuca wyjątek InvalidSignature.
+
+encrypt(data, key, mode, iv_nonce=None)
+Szyfruje dane używając wybranego trybu szyfrowania (ECB, CBC, CTR) i opcjonalnie IV. Zwraca zaszyfrowane dane z dołączonym HMAC.
+
+decrypt(ciphertext, key, mode, iv_nonce=None)
+Deszyfruje dane, najpierw weryfikując HMAC, następnie używając wybranego trybu szyfrowania.
+
+Funkcje GUI:
+	encrypt_file()
+	Otwiera dialog wyboru pliku, czyta plik, szyfruje go i zapisuje z rozszerzeniem .enc.
+
+decrypt_file()
+	Otwiera dialog wyboru zaszyfrowanego pliku, deszyfruje go i zapisuje bez rozszerzenia .enc.
+
+tamper_file()
+	Umożliwia użytkownikowi modyfikację wybranego bajtu w zaszyfrowanym pliku. Demonstruje wpływ modyfikacji na proces deszyfrowania.
+
+Instrukcja Uruchomienia:
+	Aplikacja jest uruchamiana przez wykonanie skryptu w środowisku Pythona:
+	python encryption_app.py
+Po uruchomieniu, aplikacja prezentuje interfejs graficzny, z którego można korzystać do szyfrowania, deszyfrowania i manipulacji plikami.
+
+Wskazówki Użytkowania:
+	Przed szyfrowaniem pliku, wybierz tryb szyfrowania z dostępnych opcji (ECB, CBC, CTR).
+	Pamiętaj, aby zabezpieczyć klucz i IV, gdyż są one niezbędne do deszyfrowania.
+	Eksperymentuj z funkcją manipulacji danych, aby zrozumieć wpływ modyfikacji szyfrogramu na wynik deszyfrowania.
+	Aplikacja stanowi przykład prostego, lecz funkcjonalnego narzędzia do demonstracji kryptografii symetrycznej w Pythonie, wykorzystując popularne tryby szyfrowania i metody zabezpieczeń.
+
+
+
+
+
+
+
+
