@@ -7,6 +7,13 @@ from cryptography.hazmat.primitives.padding import PKCS7
 from cryptography.exceptions import InvalidSignature
 import os
 
+class Encryption:
+    def __init__(self):
+        self.key = None
+        self.iv_nonce = None
+
+    
+
 # Helper functions for cryptography
 def generate_key():
     return os.urandom(32)  # 256-bit key for AES
@@ -14,6 +21,7 @@ def generate_key():
 def generate_iv():
     return os.urandom(16)  # 128-bit IV for AES
 
+# Required for CBC, ECB
 def pad(data):
     padder = PKCS7(algorithms.AES.block_size).padder()
     return padder.update(data) + padder.finalize()
@@ -36,37 +44,53 @@ def hmac_verify(key, signature, data):
     except InvalidSignature:
         return False
 
-def encrypt(data, key, mode, iv_nonce=None):
+def mode_from_str(mode: str, iv_nonce) -> modes.Mode:
     if mode == 'ECB':
-        cipher = Cipher(algorithms.AES(key), modes.ECB(), backend=default_backend())
-    elif mode == 'CBC':
-        cipher = Cipher(algorithms.AES(key), modes.CBC(iv_nonce), backend=default_backend())
-    elif mode == 'CTR':
-        cipher = Cipher(algorithms.AES(key), modes.CTR(iv_nonce), backend=default_backend())
+        return modes.ECB()
+    if mode == 'CBC':
+        return modes.CBC(iv_nonce)
+    if mode == 'CTR':
+        return modes.CTR(iv_nonce)
+
+
+# metadata format: mode (3 bytes) + iv_nonce (16 bytes) + hmac (32 bytes)
+def write_metadata(mode: str, iv_nonce, hmac) -> bytes:
+    if iv_nonce is None:
+        iv_nonce = bytes(16)
+    if hmac is None:
+        hmac = bytes(32)
+    return mode.encode('ascii') + iv_nonce + hmac
+
+def read_metadata(data: bytes):
+    mode = data[:3].decode('ascii')
+    iv_nonce = data[3:19]
+    hmac = data[19:51]
+    return mode, iv_nonce, hmac
+
+def drop_metadata(data: bytes) -> bytes:
+    return data[51:]
+
+def encrypt(data, key, mode, iv_nonce):
+    cipher = Cipher(algorithms.AES(key), mode_from_str(mode, iv_nonce), backend=default_backend())
     encryptor = cipher.encryptor()
     padded_data = pad(data)
     ciphertext = encryptor.update(padded_data) + encryptor.finalize()
-    return iv_nonce + ciphertext + hmac_sign(key, ciphertext) if iv_nonce else ciphertext + hmac_sign(key, ciphertext)
+    return write_metadata(mode, iv_nonce, hmac_sign(key, ciphertext)) + ciphertext
 
-def decrypt(ciphertext, key, mode, iv_nonce=None):
+def decrypt(ciphertext, key):
     try:
-        hmac_offset = -32
-        original_hmac = ciphertext[hmac_offset:]
-        ciphertext = ciphertext[:hmac_offset]
+        mode, iv_nonce, original_hmac = read_metadata(ciphertext)
+        ciphertext = drop_metadata(ciphertext)
         if not hmac_verify(key, original_hmac, ciphertext):
             raise ValueError("Ciphertext has been tampered with or the key is incorrect")
-        if mode == 'ECB':
-            cipher = Cipher(algorithms.AES(key), modes.ECB(), backend=default_backend())
-        elif mode == 'CBC':
-            cipher = Cipher(algorithms.AES(key), modes.CBC(iv_nonce), backend=default_backend())
-        elif mode == 'CTR':
-            cipher = Cipher(algorithms.AES(key), modes.CTR(iv_nonce), backend=default_backend())
+        cipher = Cipher(algorithms.AES(key), mode_from_str(mode, iv_nonce), backend=default_backend())
         decryptor = cipher.decryptor()
         padded_plaintext = decryptor.update(ciphertext) + decryptor.finalize()
         return unpad(padded_plaintext)
     except Exception as e:
         messagebox.showerror("Decryption Error", str(e))
         return None
+    
 
 class EncryptionApp(tk.Tk):
     def __init__(self):
@@ -98,8 +122,6 @@ class EncryptionApp(tk.Tk):
         mode = self.selected_mode.get()
         iv_nonce = generate_iv() if mode in ["CBC", "CTR"] else None
         ciphertext = encrypt(data, self.key, mode, iv_nonce)
-        if iv_nonce:
-            ciphertext = iv_nonce + ciphertext  # prepend IV/nonce for CBC and CTR modes
         with open(filepath + ".enc", 'wb') as f:
             f.write(ciphertext)
         messagebox.showinfo("Encryption", f"File encrypted using {mode} mode.")
@@ -110,14 +132,12 @@ class EncryptionApp(tk.Tk):
             return
         with open(filepath, 'rb') as f:
             file_content = f.read()
-        mode = self.selected_mode.get()
-        iv_nonce = file_content[:16] if mode in ["CBC", "CTR"] else None
-        ciphertext = file_content[16:] if mode in ["CBC", "CTR"] else file_content
-        plaintext = decrypt(ciphertext, self.key, mode, iv_nonce)
+        plaintext = decrypt(file_content, self.key)
         if plaintext is not None:
             with open(filepath.replace(".enc", ".dec"), 'wb') as f:
                 f.write(plaintext)
-            messagebox.showinfo("Decryption", f"File decrypted using {mode} mode.")
+            messagebox.showinfo("Decryption", f"File decrypted.")
+            #messagebox.showinfo("Decryption", f"File decrypted using {mode} mode.")
         else:
             messagebox.showerror("Decryption Error", "Failed to decrypt due to tampering or other errors.")
 
