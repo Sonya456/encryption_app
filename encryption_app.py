@@ -70,6 +70,23 @@ def read_metadata(data: bytes):
 def drop_metadata(data: bytes) -> bytes:
     return data[51:]
 
+def get_file_extension(filepath: str) -> str:
+    _, extension = os.path.splitext(filepath)
+    return extension
+
+def file_signature_len(filepath: str) -> int:
+    extension = get_file_extension(filepath)
+    if extension == '.png':
+        return 8
+    if extension == '.jpg':
+        return 4
+    
+def get_file_signature(filepath: str, text: bytes) -> bytes:
+    return text[:file_signature_len(filepath)]
+
+def drop_file_signature(filepath: str, text: bytes) -> bytes:
+    return text[file_signature_len(filepath):]
+
 def encrypt(data, key, mode, iv_nonce):
     cipher = Cipher(algorithms.AES(key), mode_from_str(mode, iv_nonce), backend=default_backend())
     encryptor = cipher.encryptor()
@@ -97,12 +114,19 @@ class EncryptionApp(tk.Tk):
         super().__init__()
         self.title("Encryption Application")
         self.geometry("400x250")
+        self.selected_app_mode = tk.StringVar(value="Normal")
         self.selected_mode = tk.StringVar(value="ECB")
         self.key = generate_key()
 
+        app_modes_frame = tk.Frame(self)
+        app_modes_frame.pack(pady=10)
+        tk.Label(app_modes_frame, text="Choose application mode:").pack(side="left")
+        for mode in ["Normal", "Demo"]:
+            tk.Radiobutton(app_modes_frame, text=mode, value=mode, variable=self.selected_app_mode).pack(side="left")
+
         modes_frame = tk.Frame(self)
         modes_frame.pack(pady=10)
-        tk.Label(modes_frame, text="Choose Mode:").pack(side="left")
+        tk.Label(modes_frame, text="Choose encryption mode:").pack(side="left")
         for mode in ["ECB", "CBC", "CTR"]:
             tk.Radiobutton(modes_frame, text=mode, value=mode, variable=self.selected_mode).pack(side="left")
 
@@ -126,6 +150,7 @@ class EncryptionApp(tk.Tk):
             f.write(ciphertext)
         messagebox.showinfo("Encryption", f"File encrypted using {mode} mode.")
 
+
     def decrypt_file(self):
         filepath = filedialog.askopenfilename(filetypes=[("Encrypted Files", "*.enc")])
         if not filepath:
@@ -134,10 +159,9 @@ class EncryptionApp(tk.Tk):
             file_content = f.read()
         plaintext = decrypt(file_content, self.key)
         if plaintext is not None:
-            with open(filepath.replace(".enc", ".dec"), 'wb') as f:
+            with open(filepath.replace(".enc", ""), 'wb') as f:
                 f.write(plaintext)
             messagebox.showinfo("Decryption", f"File decrypted.")
-            #messagebox.showinfo("Decryption", f"File decrypted using {mode} mode.")
         else:
             messagebox.showerror("Decryption Error", "Failed to decrypt due to tampering or other errors.")
 
