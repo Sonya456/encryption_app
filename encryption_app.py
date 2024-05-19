@@ -5,6 +5,7 @@ from cryptography.hazmat.primitives import hashes, hmac
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives.padding import PKCS7
 from cryptography.exceptions import InvalidSignature
+from PIL import Image
 import os
 
 class Encryption:
@@ -53,60 +54,131 @@ def mode_from_str(mode: str, iv_nonce) -> modes.Mode:
         return modes.CTR(iv_nonce)
 
 
-# metadata format: mode (3 bytes) + iv_nonce (16 bytes) + hmac (32 bytes)
-def write_metadata(mode: str, iv_nonce, hmac) -> bytes:
+# metadata format: mode (3 bytes) + iv_nonce (16 bytes) + hmac (32 bytes) + extension (16 bytes)
+def write_metadata(mode: str, iv_nonce, hmac, extension: str) -> bytes:
     if iv_nonce is None:
         iv_nonce = bytes(16)
     if hmac is None:
         hmac = bytes(32)
-    return mode.encode('ascii') + iv_nonce + hmac
+    if extension is None:
+        extension = bytes(16)
+    else:
+        extension = extension.ljust(16, '\0').encode('ascii')
+    return mode.encode('ascii') + iv_nonce + hmac + extension
 
 def read_metadata(data: bytes):
-    mode = data[:3].decode('ascii')
-    iv_nonce = data[3:19]
-    hmac = data[19:51]
-    return mode, iv_nonce, hmac
+    extension = data[-16:].decode('ascii').strip('\0')
+    hmac = data[-48:-16]
+    iv_nonce = data[-64:-48]
+    mode = data[-67:-64].decode('ascii')
+    return mode, iv_nonce, hmac, extension
 
 def drop_metadata(data: bytes) -> bytes:
-    return data[51:]
+    return data[:-67]
 
 def get_file_extension(filepath: str) -> str:
     _, extension = os.path.splitext(filepath)
     return extension
 
-def file_signature_len(filepath: str) -> int:
-    extension = get_file_extension(filepath)
+def get_file_name(filepath: str) -> str:
+    name, _ = os.path.splitext(os.path.basename(filepath))
+    return name
+
+def file_signature_len(extension) -> int:
     if extension == '.png':
         return 8
     if extension == '.jpg':
         return 4
     
-def get_file_signature(filepath: str, text: bytes) -> bytes:
-    return text[:file_signature_len(filepath)]
+def get_file_signature(extension: str, text: bytes) -> bytes:
+    return text[:file_signature_len(extension)]
 
-def drop_file_signature(filepath: str, text: bytes) -> bytes:
-    return text[file_signature_len(filepath):]
+def drop_file_signature(extension: str, text: bytes) -> bytes:
+    return text[file_signature_len(extension):]
 
-def encrypt(data, key, mode, iv_nonce):
+def encrypt(data, key, mode, extension):
+    iv_nonce = generate_iv() if mode in ["CBC", "CTR"] else None
+
     cipher = Cipher(algorithms.AES(key), mode_from_str(mode, iv_nonce), backend=default_backend())
     encryptor = cipher.encryptor()
     padded_data = pad(data)
     ciphertext = encryptor.update(padded_data) + encryptor.finalize()
-    return write_metadata(mode, iv_nonce, hmac_sign(key, ciphertext)) + ciphertext
+
+    return ciphertext + write_metadata(mode, iv_nonce, hmac_sign(key, ciphertext), extension)
+
+def demo_encrypt(data, key, mode, extension, file):
+    iv_nonce = generate_iv() if mode in ["CBC", "CTR"] else None
+
+    cipher = Cipher(algorithms.AES(key), mode_from_str(mode, iv_nonce), backend=default_backend())
+    encryptor = cipher.encryptor()
+    padded_data = pad(data)
+    ciphertext = encryptor.update(padded_data) + encryptor.finalize()
+    return ciphertext + write_metadata(mode, iv_nonce, None, extension)
 
 def decrypt(ciphertext, key):
     try:
-        mode, iv_nonce, original_hmac = read_metadata(ciphertext)
+        mode, iv_nonce, original_hmac, extension = read_metadata(ciphertext)
         ciphertext = drop_metadata(ciphertext)
+
         if not hmac_verify(key, original_hmac, ciphertext):
             raise ValueError("Ciphertext has been tampered with or the key is incorrect")
+        
         cipher = Cipher(algorithms.AES(key), mode_from_str(mode, iv_nonce), backend=default_backend())
         decryptor = cipher.decryptor()
         padded_plaintext = decryptor.update(ciphertext) + decryptor.finalize()
-        return unpad(padded_plaintext)
+
+        return unpad(padded_plaintext), extension
+    
     except Exception as e:
         messagebox.showerror("Decryption Error", str(e))
-        return None
+        return None, None
+
+def demo_decrypt(ciphertext, key):
+    try:
+        mode, iv_nonce, _, extension = read_metadata(ciphertext)
+        ciphertext = drop_metadata(ciphertext)
+
+        cipher = Cipher(algorithms.AES(key), mode_from_str(mode, iv_nonce), backend=default_backend())
+        decryptor = cipher.decryptor()
+        padded_plaintext = decryptor.update(ciphertext) + decryptor.finalize()
+
+        return unpad(padded_plaintext), extension
+    
+    except Exception as e:
+        messagebox.showerror("Decryption Error", str(e))
+        return None, None
+
+def open_file(filetype):
+    filepath = filedialog.askopenfilename(filetypes=filetype)
+    if not filepath:
+        return None, None
+    with open(filepath, 'rb') as f:
+            file_content = f.read()
+    return filepath, file_content
+
+def demo_open_file(filetype):
+    filepath = filedialog.askopenfilename(filetypes=filetype)
+    if not filepath:
+        return None, None
+    file = Image.open(filepath)
+    file_content = file.tobytes()
+    return filepath, file_content, file
+
+def save_file(text, default_ext, initialfile='*'):
+    filepath = filedialog.asksaveasfilename(initialfile=initialfile, defaultextension=default_ext)
+    if not filepath:
+        return False
+    if text is not None:
+        with open(filepath, 'wb') as f:
+            f.write(text)
+    return True
+
+def demo_save_file(file: Image, default_ext, initialfile='*'):
+    filepath = filedialog.asksaveasfilename(initialfile=initialfile, defaultextension=default_ext)
+    if not filepath:
+        return False
+    file.save(filepath)
+    return True
     
 
 class EncryptionApp(tk.Tk):
@@ -122,7 +194,8 @@ class EncryptionApp(tk.Tk):
         app_modes_frame.pack(pady=10)
         tk.Label(app_modes_frame, text="Choose application mode:").pack(side="left")
         for mode in ["Normal", "Demo"]:
-            tk.Radiobutton(app_modes_frame, text=mode, value=mode, variable=self.selected_app_mode).pack(side="left")
+            tk.Radiobutton(app_modes_frame, text=mode, value=mode, 
+                           variable=self.selected_app_mode, command=self.update_buttons_mode).pack(side="left")
 
         modes_frame = tk.Frame(self)
         modes_frame.pack(pady=10)
@@ -137,39 +210,66 @@ class EncryptionApp(tk.Tk):
         self.tamper_button = tk.Button(self, text="Tamper with Encrypted File", command=self.tamper_file)
         self.tamper_button.pack(pady=5)
 
+    def update_buttons_mode(self):
+        if self.selected_app_mode.get() == "Normal":
+            self.encrypt_button.config(command = self.encrypt_file)
+            self.decrypt_button.config(command = self.decrypt_file)
+        else:
+            self.encrypt_button.config(command = self.demo_encrypt_file)
+            self.decrypt_button.config(command = self.demo_decrypt_file)
+
+
     def encrypt_file(self):
-        filepath = filedialog.askopenfilename()
-        if not filepath:
+        filepath, file_content = open_file([("File to encrypt", "*.*")])
+        if filepath is None:
             return
-        with open(filepath, 'rb') as f:
-            data = f.read()
         mode = self.selected_mode.get()
-        iv_nonce = generate_iv() if mode in ["CBC", "CTR"] else None
-        ciphertext = encrypt(data, self.key, mode, iv_nonce)
-        with open(filepath + ".enc", 'wb') as f:
-            f.write(ciphertext)
-        messagebox.showinfo("Encryption", f"File encrypted using {mode} mode.")
+        ciphertext = encrypt(file_content, self.key, mode, get_file_extension(filepath))
+        if save_file(ciphertext, ".enc"):
+            messagebox.showinfo("Encryption", f"File encrypted using {mode} mode.")
+
+    def demo_encrypt_file(self):
+        filepath, file_content, image = demo_open_file([("File to encrypt", "*.*")])
+        if filepath is None:
+            return
+        mode = self.selected_mode.get()
+        ciphertext = demo_encrypt(file_content, self.key, mode, get_file_extension(filepath), image)
+        print(len(ciphertext))
+        ciphertext = Image.frombytes(image.mode, image.size, ciphertext)
+        if demo_save_file(ciphertext, get_file_extension(filepath), get_file_name(filepath)):
+            messagebox.showinfo("Encryption", f"Image encrypted using {mode} mode.")
 
 
     def decrypt_file(self):
-        filepath = filedialog.askopenfilename(filetypes=[("Encrypted Files", "*.enc")])
-        if not filepath:
+        filepath, file_content = open_file([("File to decrypt", "*.*")])
+        if filepath is None:
             return
-        with open(filepath, 'rb') as f:
-            file_content = f.read()
-        plaintext = decrypt(file_content, self.key)
+        plaintext, extension = decrypt(file_content, self.key)
         if plaintext is not None:
-            with open(filepath.replace(".enc", ""), 'wb') as f:
-                f.write(plaintext)
-            messagebox.showinfo("Decryption", f"File decrypted.")
+            if save_file(plaintext, extension, get_file_name(filepath)):
+                messagebox.showinfo("Decryption", f"File decrypted.")
+        else:
+            messagebox.showerror("Decryption Error", "Failed to decrypt due to tampering or other errors.")
+
+    def demo_decrypt_file(self):
+        filepath, file_content, image = demo_open_file([("File to decrypt", "*.*")])
+        if filepath is None:
+            return
+        print(len(file_content))
+        plaintext, extension = demo_decrypt(file_content, self.key)
+        if plaintext is not None:
+            plaintext = Image.frombytes(image.mode, image.size, plaintext)
+            if demo_save_file(plaintext, extension, get_file_name(filepath)):
+                messagebox.showinfo("Decryption", f"File decrypted.")
         else:
             messagebox.showerror("Decryption Error", "Failed to decrypt due to tampering or other errors.")
 
     def tamper_file(self):
-        filepath = filedialog.askopenfilename(filetypes=[("Encrypted Files", "*.enc")])
-        if not filepath:
+        filepath, file_content = open_file([("File to tamper with", "*.*")])
+        if filepath is None:
             return
-        byte_position = simpledialog.askinteger("Tamper", "Enter the byte position to tamper with:", minvalue=0)
+        byte_position = simpledialog.askinteger("Tamper", "Enter the byte position ( 0 - " + 
+                                                str(len(file_content)) + " ) to tamper with:", minvalue=0)
         with open(filepath, 'rb+') as f:
             f.seek(byte_position)
             original_byte = f.read(1)
