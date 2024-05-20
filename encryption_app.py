@@ -292,7 +292,7 @@ class EncryptionApp(tk.Tk):
         
         key_frame = tk.Frame(self)
         key_frame.pack(pady=5)
-        self.save_key_button = tk.Button(key_frame, text="Save new key", command=self.save_key, )
+        self.save_key_button = tk.Button(key_frame, text="Save current key", command=self.save_key, )
         self.save_key_button.pack(side="left", padx=5)
         self.save_key_button = tk.Button(key_frame, text="Load key", command=self.load_key)
         self.save_key_button.pack(side="left")
@@ -318,9 +318,9 @@ class EncryptionApp(tk.Tk):
             self.decrypt_button.config(command = self.demo_decrypt_file)
 
     def save_key(self):
-        self.key = generate_key()
         if save_file(self.key, ".key"):
-            messagebox.showinfo("Key", "Key saved")
+            self.key = generate_key()
+            messagebox.showinfo("Key", "Key saved, current active key is changed.")
 
     def load_key(self):
         filepath, key = open_file([("Key file", "*.key")])
