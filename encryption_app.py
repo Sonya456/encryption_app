@@ -292,7 +292,7 @@ class EncryptionApp(tk.Tk):
         
         key_frame = tk.Frame(self)
         key_frame.pack(pady=5)
-        self.save_key_button = tk.Button(key_frame, text="Save key", command=self.save_key)
+        self.save_key_button = tk.Button(key_frame, text="Save new key", command=self.save_key, )
         self.save_key_button.pack(side="left", padx=5)
         self.save_key_button = tk.Button(key_frame, text="Load key", command=self.load_key)
         self.save_key_button.pack(side="left")
@@ -318,14 +318,19 @@ class EncryptionApp(tk.Tk):
             self.decrypt_button.config(command = self.demo_decrypt_file)
 
     def save_key(self):
-        if save_file(generate_key(), ".key"):
+        self.key = generate_key()
+        if save_file(self.key, ".key"):
             messagebox.showinfo("Key", "Key saved")
 
     def load_key(self):
         filepath, key = open_file([("Key file", "*.key")])
         if filepath is not None:
-            self.key = key
-            messagebox.showinfo("Key", "Key loaded")
+            if len(key) == 32:
+                self.key = key
+                messagebox.showinfo("Key", "Key loaded")
+            else:
+                messagebox.showerror("Key Error", "Key must be 256-bit long")
+
 
     def encrypt_file(self):
         filepath, file_content = open_file([("File to encrypt", "*.*")])
@@ -347,23 +352,24 @@ class EncryptionApp(tk.Tk):
         
         # saving demo ciphertext
         if save_file(ciphertext, ".enc"):
-            messagebox.showinfo("Encryption", f"File demo encryption saved")
+            messagebox.showinfo("Encryption", "File demo encryption saved")
 
         ciphered_image = Image.frombytes(image.mode, image.size, ciphered_image)
 
         # saving ciphered image
         if save_image(ciphered_image, get_file_extension(filepath), get_file_name(filepath)):
-            messagebox.showinfo("Encryption", f"Encrypted image saved")
+            messagebox.showinfo("Encryption", "Encrypted image saved")
 
 
     def decrypt_file(self):
         filepath, file_content = open_file([("File to decrypt", "*.enc")])
         if filepath is None:
             return
+        
         plaintext, extension = decrypt(file_content, self.key)
         if plaintext is not None:
             if save_file(plaintext, extension, get_file_name(filepath)):
-                messagebox.showinfo("Decryption", f"File decrypted.")
+                messagebox.showinfo("Decryption", "File decrypted.")
         else:
             messagebox.showerror("Decryption Error", "Failed to decrypt due to changed ciphertext or other errors.")
 
@@ -375,7 +381,7 @@ class EncryptionApp(tk.Tk):
         plaintext, extension = demo_decrypt(file_content)
         if plaintext is not None:
                 if save_file(plaintext, extension, get_file_name(filepath)):
-                    messagebox.showinfo("Decryption", f"File decrypted.")
+                    messagebox.showinfo("Decryption", "File decrypted.")
         else:
             messagebox.showerror("Decryption Error", "Failed to decrypt due to changed ciphertext or other errors.")
 
@@ -383,8 +389,14 @@ class EncryptionApp(tk.Tk):
         filepath, file_content = open_file([("File to change", "*.*")])
         if filepath is None:
             return
+        
         byte_position = simpledialog.askinteger("Change", "Enter the byte position ( 0 - " + 
                                                 str(len(file_content)) + " ) to change:", minvalue=0)
+        
+        if byte_position is None or byte_position < 0 or byte_position >= len(file_content):
+            messagebox.showerror("Changing", "Invalid byte position")
+            return
+        
         with open(filepath, 'rb+') as f:
             f.seek(byte_position)
             original_byte = f.read(1)
@@ -396,15 +408,23 @@ class EncryptionApp(tk.Tk):
         messagebox.showinfo("Changing", f"Byte at position {byte_position} has been changed.")
 
     def xor_images(self):
+        # open first image
         filepath, _, image_content1, image = open_image([("First image to xor", "*.*")])
-        _, _, image_content2, _ = open_image([("Second image to xor", "*.*")])
+        if filepath is None:
+            return
+        
+        # open second image
+        filepath2, _, image_content2, _ = open_image([("Second image to xor", "*.*")])
+        if filepath2 is None:
+            return
+        
         if len(image_content1) != len(image_content2):
             messagebox.showerror("XOR", "Images must have the same size")
             return
 
         xor_image = xor_images_content(image, image_content1, image_content2)
         if save_image(xor_image, get_file_extension(filepath), get_file_name(filepath)):
-            messagebox.showinfo("XOR", f"XOR of images saved")
+            messagebox.showinfo("XOR", "XOR of images saved")
 
 
 
