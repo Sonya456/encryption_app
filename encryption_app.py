@@ -270,7 +270,7 @@ class EncryptionApp(tk.Tk):
             messagebox.showerror("Decryption Error", "Failed to decrypt due to changed ciphertext or other errors.")
 
     def change_file(self):
-        filepath, file_content = open_file([("File to change", "*.enc")])
+        filepath, file_content = open_file([("File to change", "*.*")])
         if filepath is None:
             return
         byte_position = simpledialog.askinteger("Change", "Enter the byte position ( 0 - " + 
@@ -284,6 +284,31 @@ class EncryptionApp(tk.Tk):
             f.seek(byte_position)
             f.write(tampered_byte)
         messagebox.showinfo("Changing", f"Byte at position {byte_position} has been changed.")
+
+def xor_images(image_path1, image_path2, output_path):
+    # Open the two images
+    img1 = Image.open(image_path1)
+    img2 = Image.open(image_path2)
+    
+    # Ensure the images have the same size and mode
+    if img1.size != img2.size or img1.mode != img2.mode:
+        raise ValueError("Images must have the same size and mode")
+    
+    # Convert images to byte arrays
+    img1_bytes = img1.tobytes()
+    img2_bytes = img2.tobytes()
+    
+    # Perform XOR on the byte arrays
+    xor_bytes = bytes(a ^ b for a, b in zip(img1_bytes, img2_bytes))
+    
+    # Create a new image from the XOR result
+    xor_image = Image.frombytes(img1.mode, img1.size, xor_bytes)
+    
+    # Save the result image
+    xor_image.save(output_path)
+
+
+#xor_images('ctr1.bmp', 'ctr2.bmp', 'output_image.bmp')
 
 if __name__ == "__main__":
     app = EncryptionApp()
